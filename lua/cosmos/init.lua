@@ -11,41 +11,76 @@
 -- -- nvim_win_set_buf({window}, {buffer})                      *nvim_win_set_buf()*
 --
 local cosmos = {}
+-- script_url: <url_base>/tools/scriptrunn/?file=<url-encoded file_path>
+function cosmos.convert_script_url_to_url(script_url)
+	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
+	local file_path = vim.split(script_url, '=')[2]
+	file_path = string.gsub(file_path, '%%2F', '/')
+	local api_url = url_base .. '/script-api/scripts/' .. file_path
+	return api_url
+end
+
+function cosmos.convert_script_url_to_lock_url(script_url)
+	return cosmos.convert_script_url_to_url(script_url) .. '/lock?scope=DEFAULT'
+end
+
+function cosmos.convert_script_url_to_download_url(script_url)
+	return cosmos.convert_script_url_to_url(script_url) .. '?scope=DEFAULT'
+end
+
+function cosmos.curl(pass, url)
+	return vim.fn.system("curl -s -H 'Authorization:" .. pass .. "' " .. url)
+end
+
+function cosmos.download_script(script_url)
+	local download_url = cosmos.convert_script_url_to_download_url(script_url)
+	local script_contents = cosmos.curl('pass', download_url)
+	print(script_contents)
+	local contents = vim.json.decode(script_contents).contents
+	return vim.split(contents, '\n')
+end
+
+function cosmos.lock_script(script_url)
+	lock_url = cosmos.convert_script_url_to_lock_url(script_url)
+	cosmos.curl('pass', lock_url)
+end
+
+function cosmos.save_script(buffer, script_url)
+	local save_url = cosmos.convert_script_url_to_download_url(script_url)
+	local msg = { text = nil }
+	msg.text = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), '\n')
+	local msg_json = vim.json.encode(msg)
+	local curl_cmd = "curl -s -H 'Authorization:pass' -H 'Content-Type: application/json' --data-raw '" ..
+		msg_json .. "' '" .. save_url .. "'"
+	vim.fn.system(curl_cmd)
+end
+
 function cosmos.setup()
 	vim.api.nvim_create_user_command('Cosmos',
 		function(args)
-			-- local url = 'http://localhost:2900/tools/scriptrunner/?file=DRIFTER2DEV%2Fprocedures%2Fsim_circle.rb'
-			local file = vim.split(args.args, '=')[2]
-			file = string.gsub(file, '%%2F', '/')
-			local api_url = 'http://localhost:2900/script-api/scripts/' .. file
-			-- Lock script for editing
-			local lock_url = api_url .. 'lock?scope=DEFAULT'
-			vim.fn.system("curl -H 'Authorization:pass' " .. lock_url)
-			-- Download script
-			local url = api_url .. '?scope=DEFAULT'
-			local outp = vim.fn.system("curl -s -H 'Authorization:pass' " .. url)
+			local script_url = args.args
+
+			local contents_list = cosmos.download_script(script_url)
+			cosmos.lock_script(script_url)
+
 			local buf = vim.api.nvim_create_buf(true, false)
-			local contents = vim.json.decode(outp).contents
-			local contents_list = vim.split(contents, '\n')
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents_list)
-			-- vim.api.nvim_open_win(buf, true, {relative='win', width=12, height=3, bufpos={100,10}})
 			vim.api.nvim_win_set_buf(0, buf)
-			vim.api.nvim_buf_set_name(buf, 'cosmos://' .. url)
-			vim.api.nvim_buf_set_option(buf, 'filetype', 'ruby')
+			vim.api.nvim_buf_set_name(buf, 'cosmos://' .. script_url)
+			vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf })
 			vim.api.nvim_create_autocmd({ "BufWriteCmd" }, {
 				pattern = { "cosmos://*" },
 				callback = function()
-					-- save_url = api.nvim_buf_get_name(0
-					local msg = { text = nil }
-					msg.text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
-					local msg_json = vim.json.encode(msg)
-					local curl_cmd = "curl -s -H 'Authorization:pass' -H 'Content-Type: application/json' --data-raw '" ..
-						msg_json .. "' '" .. url .. "'"
-					vim.fn.system(curl_cmd)
+					local buffer = vim.api.nvim_get_current_buf()
+					local script_url = vim.split(vim.api.nvim_buf_get_name(buffer), 'cosmos://')[2]
+					cosmos.save_script(buffer, script_url)
+					vim.api.nvim_buf_set_option(buffer, 'modified', false)
+					cosmos.lock_script(script_url)
 				end
 
 			})
 		end,
 		{ nargs = 1 })
 end
+
 return cosmos
