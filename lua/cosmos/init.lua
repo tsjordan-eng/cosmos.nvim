@@ -61,47 +61,51 @@ function cosmos.get_script_url_from_buf(buffer)
 	return vim.split(vim.api.nvim_buf_get_name(buffer), 'cosmos://')[2]
 end
 
+function cosmos.open_cosmos_script(script_url_arg)
+	local contents_list = cosmos.download_script(script_url_arg)
+	cosmos.lock_script(script_url_arg)
+
+	local buf_name = 'cosmos://' .. script_url_arg
+	local buf = vim.fn.bufnr(buf_name)
+	if buf < 0 then
+		buf = vim.api.nvim_create_buf(true, false)
+		vim.api.nvim_buf_set_name(buf, buf_name)
+	end
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents_list)
+	vim.api.nvim_buf_set_option(buf, 'modified', false)
+	vim.api.nvim_win_set_buf(0, buf)
+	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf })
+end
+
 function cosmos.setup()
+	-- Cosmos Commands --
 	vim.api.nvim_create_user_command('Cosmos',
 		function(args)
 			local script_url_arg = args.args
-
-			local contents_list = cosmos.download_script(script_url_arg)
-			cosmos.lock_script(script_url_arg)
-
-
-			local buf_name = 'cosmos://' .. script_url_arg
-			local buf = vim.fn.bufnr(buf_name)
-			if buf < 0 then
-				buf = vim.api.nvim_create_buf(true, false)
-				vim.api.nvim_buf_set_name(buf, buf_name)
-			end
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents_list)
-			vim.api.nvim_buf_set_option(buf, 'modified', false)
-			vim.api.nvim_win_set_buf(0, buf)
-			vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf })
-			vim.api.nvim_create_autocmd({ "BufWriteCmd" }, {
-				pattern = { "cosmos://*" },
-				callback = function()
-					local buffer = vim.api.nvim_get_current_buf()
-					local script_url = cosmos.get_script_url_from_buf(buffer)
-					cosmos.save_script(buffer, script_url)
-					vim.api.nvim_buf_set_option(buffer, 'modified', false)
-					cosmos.lock_script(script_url)
-				end
-
-			})
-			vim.api.nvim_create_autocmd({ "BufDelete" }, {
-				pattern = { "cosmos://*" },
-				callback = function()
-					local buffer = vim.api.nvim_get_current_buf()
-					local script_url = cosmos.get_script_url_from_buf(buffer)
-					cosmos.unlock_script(script_url)
-				end
-
-			})
+			cosmos.open_cosmos_script(script_url_arg)
 		end,
 		{ nargs = 1 })
+
+	-- Autocommands --
+	vim.api.nvim_create_autocmd({ "BufWriteCmd" }, {
+		pattern = { "cosmos://*" },
+		callback = function()
+			local buffer = vim.api.nvim_get_current_buf()
+			local script_url = cosmos.get_script_url_from_buf(buffer)
+			cosmos.save_script(buffer, script_url)
+			vim.api.nvim_buf_set_option(buffer, 'modified', false)
+			cosmos.lock_script(script_url)
+		end
+
+	})
+	vim.api.nvim_create_autocmd({ "BufDelete" }, {
+		pattern = { "cosmos://*" },
+		callback = function()
+			local buffer = vim.api.nvim_get_current_buf()
+			local script_url = cosmos.get_script_url_from_buf(buffer)
+			cosmos.unlock_script(script_url)
+		end
+	})
 end
 
 return cosmos
