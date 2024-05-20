@@ -22,6 +22,10 @@ function cosmos.convert_script_url_to_unlock_url(script_url)
 	return cosmos.convert_script_url_to_url(script_url) .. '/unlock?scope=DEFAULT'
 end
 
+function cosmos.convert_script_url_to_run_url(script_url)
+	return cosmos.convert_script_url_to_url(script_url) .. '/run?scope=DEFAULT'
+end
+
 function cosmos.convert_script_url_to_download_url(script_url)
 	return cosmos.convert_script_url_to_url(script_url) .. '?scope=DEFAULT'
 end
@@ -45,6 +49,12 @@ end
 function cosmos.unlock_script(script_url)
 	local unlock_url = cosmos.convert_script_url_to_unlock_url(script_url)
 	cosmos.curl('pass', unlock_url)
+end
+
+-- returns Running Script ID
+function cosmos.run_script(script_url)
+	local unlock_url = cosmos.convert_script_url_to_unlock_url(script_url)
+	return cosmos.curl('pass', unlock_url)
 end
 
 function cosmos.save_script(buffer, script_url)
@@ -77,14 +87,31 @@ function cosmos.open_cosmos_script(script_url_arg)
 	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf })
 end
 
+function cosmos.run_cosmos_script(script_url)
+	cosmos.lock_script(script_url)
+	local id = cosmos.run_script(script_url)
+end
+
+-- Expects .line
+-- returns array of message lines
+function cosmos.parse_output(json_msg)
+	return  vim.split(vim.json.decode(json_msg).line, '\n', { trimempty = true })
+end
+
 function cosmos.setup()
 	-- Cosmos Commands --
-	vim.api.nvim_create_user_command('Cosmos',
+	vim.api.nvim_create_user_command('CosmosOpen',
 		function(args)
 			local script_url_arg = args.args
 			cosmos.open_cosmos_script(script_url_arg)
 		end,
 		{ nargs = 1 })
+	vim.api.nvim_create_user_command('CosmosRun',
+		function(args)
+			local script_url_arg = args.args or vim.api.nvim_get_current_buf()
+			cosmos.run_cosmos_script(script_url_arg)
+		end,
+		{ nargs = '?' })
 
 	-- Autocommands --
 	vim.api.nvim_create_autocmd({ "BufWriteCmd" }, {
