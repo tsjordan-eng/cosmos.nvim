@@ -28,6 +28,14 @@ describe("some basics", function()
 		assert.equals(expected_script_api, script_api)
 	end)
 
+	it("converts script URL to unlock API URL", function()
+		local url =
+		'http://localhost:2900/tools/scriptrunner/?file=DRIFTER2DEV%2Fprocedures%2Fsim_circle.rb'
+		local script_api = cosmos.convert_script_url_to_unlock_url(url)
+		local expected_script_api = 'http://localhost:2900/script-api/scripts/DRIFTER2DEV/procedures/sim_circle.rb/unlock?scope=DEFAULT'
+		assert.equals(expected_script_api, script_api)
+	end)
+
 	it("determines file type from script URL", function()
 		local url =
 		'http://localhost:2900/tools/scriptrunner/?file=DRIFTER2DEV%2Fprocedures%2Fsim_circle.rb'
