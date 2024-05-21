@@ -5,7 +5,7 @@
 -- -- nvim_win_set_buf({window}, {buffer})                      *nvim_win_set_buf()*
 --
 local cosmos = {}
--- script_url: <url_base>/tools/scriptrunn/?file=<url-encoded file_path>
+-- script_url: <url_base>/tools/scriptrunner/?file=<url-encoded file_path>
 function cosmos.convert_script_url_to_url(script_url)
 	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
 	local file_path = vim.split(script_url, '=')[2]
@@ -34,6 +34,12 @@ function cosmos.curl(pass, url)
 	return vim.fn.system("curl -s -H 'Authorization:" .. pass .. "' " .. url)
 end
 
+function cosmos.curl_data(pass, url, msg_json)
+	local curl_cmd = "curl -s -H 'Authorization:" .. pass .. "' -H 'Content-Type: application/json' --data-raw '" ..
+		msg_json .. "' '" .. url .. "'"
+	return vim.fn.system(curl_cmd)
+end
+
 function cosmos.download_script(script_url)
 	local download_url = cosmos.convert_script_url_to_download_url(script_url)
 	local script_contents = cosmos.curl('pass', download_url)
@@ -53,8 +59,10 @@ end
 
 -- returns Running Script ID
 function cosmos.run_script(script_url)
-	local unlock_url = cosmos.convert_script_url_to_unlock_url(script_url)
-	return cosmos.curl('pass', unlock_url)
+	local run_url = cosmos.convert_script_url_to_run_url(script_url)
+	local run_args = '{ "environment": [] }'
+	local id = cosmos.curl_data('pass', run_url, run_args)
+	print('run id: ', id)
 end
 
 function cosmos.save_script(buffer, script_url)
@@ -62,9 +70,7 @@ function cosmos.save_script(buffer, script_url)
 	local msg = { text = nil }
 	msg.text = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), '\n')
 	local msg_json = vim.json.encode(msg)
-	local curl_cmd = "curl -s -H 'Authorization:pass' -H 'Content-Type: application/json' --data-raw '" ..
-		msg_json .. "' '" .. save_url .. "'"
-	vim.fn.system(curl_cmd)
+	cosmos.curl_data('pass', save_url, msg_json)
 end
 
 function cosmos.get_script_url_from_buf(buffer)
@@ -90,12 +96,54 @@ end
 function cosmos.run_cosmos_script(script_url)
 	cosmos.lock_script(script_url)
 	local id = cosmos.run_script(script_url)
+	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
+end
+
+function cosmos.convert_base_url_to_ws_url(base_url, pass)
+	-- TODO: split on http[s]://
+	local ws_url = 'ws://' ..
+		vim.split(base_url, 'http://', {})[2] .. '/script-api/cable?scope=DEFAULT&authorization=' .. pass
+	return ws_url
+end
+
+-- api_url: http base address (ex. http://localhost:2900)
+function cosmos.log_stream(id, url_base)
+	local ws_url = cosmos.convert_base_url_to_ws_url(url_base, 'pass')
+	local subscriber_str = '{"command":"subscribe","identifier":"{\\"channel\\":\\"RunningScriptChannel\\",\\"id\\":' ..
+		id .. '}"}'
+
+	print(subscriber_str)
+	vim.cmd('split')
+	local win = vim.api.nvim_get_current_win()
+	local buf = vim.api.nvim_create_buf(true, true)
+	vim.api.nvim_win_set_buf(win, buf)
+
+	local Websocket = require('websocket').Websocket
+	cosmos.ws = Websocket:new({
+		host = 'localhost',
+		port = 2900,
+		path = '/script-api/cable?scope=DEFAULT&authorization=pass',
+		protocols = { "test" },
+		origin = "http://localhost",
+		auto_connect = false
+	})
+	cosmos.ws:add_on_connect(function()
+		cosmos.ws:send_text(subscriber_str)
+	end)
+	cosmos.ws:add_on_message(
+		function(frame)
+			vim.schedule(function()
+				vim.api.nvim_buf_set_lines(buf, -1, -1, false, { frame.payload })
+			end)
+		end)
+
+	cosmos.ws:connect()
 end
 
 -- Expects .line
 -- returns array of message lines
 function cosmos.parse_output(json_msg)
-	return  vim.split(vim.json.decode(json_msg).line, '\n', { trimempty = true })
+	return vim.split(vim.json.decode(json_msg).line, '\n', { trimempty = true })
 end
 
 function cosmos.setup()

@@ -54,7 +54,17 @@ describe("REST API", function()
 
 end)
 
+-- {"identifier":"{\"channel\":\"RunningScriptChannel\",\"id\":521}","message":{{"type":"output","line":"2024/05/19 04:33:10.002 (cmd_tlm_test.rb:469):CHECK:TARGET2EDU2 SOFTWARESTATUSMESSAGE COMMANDPROCESSORSTATUS_NUMCOMMANDSRECEIVED  ==  50 + 1 success with value == 51 after waiting 5.89152173 seconds\n","color":"BLACK"}
+-- {"identifier":"{\"channel\":\"RunningScriptChannel\",\"id\":521}","message":{"type":"line","filename":"DRIFTER2EDU2/procedures/sim_circle.rb","line_no":55,"state":"error"}}
+-- {"type":"ping","message":1716234836}
 describe("Websockets", function()
+
+	it("converts api base URL to websocket URL", function ()
+		local url = 'http://localhost:2900'
+		local script_api = cosmos.convert_base_url_to_ws_url(url, 'pass')
+		local expected_script_api = 'ws://localhost:2900/script-api/cable?scope=DEFAULT&authorization=pass'
+		assert.equals(expected_script_api, script_api)
+	end)
 
 	it("handles script message updates", function()
 		local json_msg = [[
