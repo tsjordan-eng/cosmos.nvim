@@ -35,8 +35,9 @@ function cosmos.curl(pass, url)
 end
 
 function cosmos.curl_data(pass, url, msg_json)
+	local escaped_msg = string.gsub(msg_json, "'", [['"'"']])
 	local curl_cmd = "curl -s -H 'Authorization:" .. pass .. "' -H 'Content-Type: application/json' --data-raw '" ..
-		msg_json .. "' '" .. url .. "'"
+		escaped_msg .. "' '" .. url .. "'"
 	return vim.fn.system(curl_cmd)
 end
 
@@ -71,6 +72,7 @@ function cosmos.save_script(buffer, script_url)
 	msg.text = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), '\n')
 	local msg_json = vim.json.encode(msg)
 	cosmos.curl_data('pass', save_url, msg_json)
+	cosmos.lock_script(script_url)
 end
 
 function cosmos.get_script_url_from_buf(buffer)
@@ -107,7 +109,7 @@ function cosmos.log_stream(id, script_url)
 	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
 
 	-- Create Log Buffer
-	local win_orig = vim.api.nvim_get_current_win()
+	local script_win = vim.api.nvim_get_current_win()
 	vim.cmd('split')
 	local log_win = vim.api.nvim_get_current_win()
 	local log_buf = vim.api.nvim_create_buf(true, true)
@@ -115,6 +117,8 @@ function cosmos.log_stream(id, script_url)
 	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = log_buf })
 	local debug_buf = vim.api.nvim_create_buf(true, true)
 	vim.api.nvim_win_set_buf(log_win, log_buf)
+	vim.api.nvim_set_current_win(script_win)
+	vim.o.cursorline = true
 
 	-- Create Websocket --
 	local Websocket = require('websocket').Websocket
@@ -153,7 +157,27 @@ function cosmos.log_stream(id, script_url)
 						end
 					elseif msg.type == 'file' then
 						local file_contents = vim.split(msg.text, '\n')
-						cosmos.create_script_buffer(script_url, file_contents, win_orig)
+						cosmos.create_script_buffer(script_url, file_contents, script_win)
+					elseif msg.type == 'line' then
+						local bg = 'Red'
+						if msg.state == 'waiting' then
+							bg = vim.g.terminal_color_11;
+						elseif msg.state == 'running' then
+							bg = vim.g.terminal_color_14;
+						elseif msg.state == 'error' then
+							bg = vim.g.terminal_color_9;
+						end
+						vim.cmd("hi CursorLine guifg=" .. vim.g.terminal_color_0 .. " guibg=" .. bg)
+
+						local line_number = msg.line_no
+						if line_number < 1 then return end
+						vim.api.nvim_win_set_cursor(script_win, { line_number, 0 })
+					elseif msg.type == 'complete' then
+						local win = vim.api.nvim_get_current_win()
+						vim.api.nvim_set_current_win(script_win)
+						vim.o.cursorline = false
+						vim.api.nvim_set_current_win(win)
+						cosmos.ws:disconnect()
 					end
 				end
 			end)
