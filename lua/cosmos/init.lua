@@ -26,6 +26,11 @@ function cosmos.convert_script_url_to_run_url(script_url)
 	return cosmos.convert_script_url_to_url(script_url) .. '/run?scope=DEFAULT'
 end
 
+function cosmos.convert_script_url_to_stop_url(script_url, id)
+	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
+	return url_base .. '/script-api/running-script/' .. id .. '/stop?scope=DEFAULT'
+end
+
 function cosmos.convert_script_url_to_download_url(script_url)
 	return cosmos.convert_script_url_to_url(script_url) .. '?scope=DEFAULT'
 end
@@ -64,6 +69,13 @@ function cosmos.run_script(script_url)
 	local run_args = '{ "environment": [] }'
 	local id = cosmos.curl_data('pass', run_url, run_args)
 	return id
+end
+
+function cosmos.stop_script(script_url, id)
+	local stop_url = cosmos.convert_script_url_to_stop_url(script_url, id)
+	cosmos.curl('pass', stop_url)
+	local pass = 'pass'
+	vim.fn.system("curl -X POST -s -H 'Authorization:" .. pass .. "' " .. stop_url)
 end
 
 function cosmos.save_script(buffer, script_url)
@@ -214,6 +226,15 @@ function cosmos.setup()
 			cosmos.run_cosmos_script(script_url_arg)
 		end,
 		{ nargs = '?' })
+	vim.api.nvim_create_user_command('CosmosStop',
+		function(args)
+			local id = args.args
+			local buffer = vim.api.nvim_get_current_buf()
+			local script_url = cosmos.get_script_url_from_buf(buffer)
+			print(id, buffer, script_url)
+			cosmos.stop_script(script_url, id)
+		end,
+		{ nargs = 1 })
 
 	-- Autocommands --
 	vim.api.nvim_create_autocmd({ "BufWriteCmd" }, {
