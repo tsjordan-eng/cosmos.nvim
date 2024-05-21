@@ -60,15 +60,11 @@ end)
 describe("Websockets", function()
 
 	it("handles script message updates", function()
-		local json_msg = [[
-{
-  "type": "output",
-  "line": "2024/05/19 04:33:10.002 (cmd_tlm_test.rb:469): CHECK: DRIFTER2EDU2 SOFTWARESTATUSMESSAGE COMMANDPROCESSORSTATUS_NUMCOMMANDSRECEIVED  ==  50 + 1 success with value == 51 after waiting 5.89152173 seconds\n",
-  "color": "BLACK"
-}]]
+		local json_msg = [[{ {"type":"output","line":"2024/05/19 04:33:10.002 (cmd_tlm_test.rb:469):CHECK:TARGET2EDU2 SOFTWARESTATUSMESSAGE COMMANDPROCESSORSTATUS_NUMCOMMANDSRECEIVED  ==  50 + 1 success with value == 51 after waiting 5.89152173 seconds\n","color":"BLACK"}]]
 		local expected_script_msg = {}
 		expected_script_msg[1] = '2024/05/19 04:33:10.002 (cmd_tlm_test.rb:469): CHECK: DRIFTER2EDU2 SOFTWARESTATUSMESSAGE COMMANDPROCESSORSTATUS_NUMCOMMANDSRECEIVED  ==  50 + 1 success with value == 51 after waiting 5.89152173 seconds'
-		local parsed_msg = cosmos.parse_output(json_msg)
+
+		local parsed_msg = cosmos.parse_output(vim.json.decode(json_msg))
 		assert.equal(table.concat(expected_script_msg), table.concat(parsed_msg))
 		assert(vim.deep_equal(expected_script_msg, parsed_msg))
 	end)

@@ -62,7 +62,7 @@ function cosmos.run_script(script_url)
 	local run_url = cosmos.convert_script_url_to_run_url(script_url)
 	local run_args = '{ "environment": [] }'
 	local id = cosmos.curl_data('pass', run_url, run_args)
-	print('run id: ', id)
+	return id
 end
 
 function cosmos.save_script(buffer, script_url)
@@ -96,19 +96,22 @@ end
 function cosmos.run_cosmos_script(script_url)
 	cosmos.lock_script(script_url)
 	local id = cosmos.run_script(script_url)
-	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
+	cosmos.log_stream(id, script_url)
 end
 
 -- api_url: http base address (ex. http://localhost:2900)
-function cosmos.log_stream(id, url_base)
+function cosmos.log_stream(id, script_url)
+	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
 	local subscriber_str = '{"command":"subscribe","identifier":"{\\"channel\\":\\"RunningScriptChannel\\",\\"id\\":' ..
 		id .. '}"}'
 
-	print(subscriber_str)
 	vim.cmd('split')
 	local win = vim.api.nvim_get_current_win()
-	local buf = vim.api.nvim_create_buf(true, true)
-	vim.api.nvim_win_set_buf(win, buf)
+	local buf_log = vim.api.nvim_create_buf(true, true)
+	vim.api.nvim_buf_set_name(buf_log, script_url .. '.' .. id .. '.log')
+	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf_log })
+	local buf_debug = vim.api.nvim_create_buf(true, true)
+	vim.api.nvim_win_set_buf(win, buf_log)
 
 	local Websocket = require('websocket').Websocket
 	local base_address = vim.split(url_base, 'http://', {})[2]
@@ -126,7 +129,17 @@ function cosmos.log_stream(id, url_base)
 	cosmos.ws:add_on_message(
 		function(frame)
 			vim.schedule(function()
-				vim.api.nvim_buf_set_lines(buf, -1, -1, false, { frame.payload })
+				vim.api.nvim_buf_set_lines(buf_debug, -1, -1, false, { frame.payload })
+				local msg = vim.json.decode(frame.payload).message
+				if msg then
+					if type(msg) ~= 'table' then -- this is a number for ping messages
+						return
+					end
+					if msg.type == 'output' then
+						local output_lines = cosmos.parse_output(msg)
+						vim.api.nvim_buf_set_lines(buf_log, -1, -1, false, output_lines)
+					end
+				end
 			end)
 		end)
 	cosmos.ws:connect()
@@ -134,8 +147,8 @@ end
 
 -- Expects .line
 -- returns array of message lines
-function cosmos.parse_output(json_msg)
-	return vim.split(vim.json.decode(json_msg).line, '\n', { trimempty = true })
+function cosmos.parse_output(msg)
+	return vim.split(msg.line, '\n', { trimempty = true })
 end
 
 function cosmos.setup()
