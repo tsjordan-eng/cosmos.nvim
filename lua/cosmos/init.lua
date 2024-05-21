@@ -77,11 +77,8 @@ function cosmos.get_script_url_from_buf(buffer)
 	return vim.split(vim.api.nvim_buf_get_name(buffer), 'cosmos://')[2]
 end
 
-function cosmos.open_cosmos_script(script_url_arg)
-	local contents_list = cosmos.download_script(script_url_arg)
-	cosmos.lock_script(script_url_arg)
-
-	local buf_name = 'cosmos://' .. script_url_arg
+function cosmos.create_script_buffer(script_url, contents_list, window)
+	local buf_name = 'cosmos://' .. script_url
 	local buf = vim.fn.bufnr(buf_name)
 	if buf < 0 then
 		buf = vim.api.nvim_create_buf(true, false)
@@ -89,8 +86,14 @@ function cosmos.open_cosmos_script(script_url_arg)
 	end
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents_list)
 	vim.api.nvim_buf_set_option(buf, 'modified', false)
-	vim.api.nvim_win_set_buf(0, buf)
+	vim.api.nvim_win_set_buf(window, buf)
 	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf })
+end
+
+function cosmos.open_cosmos_script(script_url)
+	local contents_list = cosmos.download_script(script_url)
+	cosmos.lock_script(script_url)
+	cosmos.create_script_buffer(script_url, contents_list, 0)
 end
 
 function cosmos.run_cosmos_script(script_url)
@@ -102,17 +105,18 @@ end
 -- api_url: http base address (ex. http://localhost:2900)
 function cosmos.log_stream(id, script_url)
 	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
-	local subscriber_str = '{"command":"subscribe","identifier":"{\\"channel\\":\\"RunningScriptChannel\\",\\"id\\":' ..
-		id .. '}"}'
 
+	-- Create Log Buffer
+	local win_orig = vim.api.nvim_get_current_win()
 	vim.cmd('split')
-	local win = vim.api.nvim_get_current_win()
-	local buf_log = vim.api.nvim_create_buf(true, true)
-	vim.api.nvim_buf_set_name(buf_log, script_url .. '.' .. id .. '.log')
-	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf_log })
-	local buf_debug = vim.api.nvim_create_buf(true, true)
-	vim.api.nvim_win_set_buf(win, buf_log)
+	local log_win = vim.api.nvim_get_current_win()
+	local log_buf = vim.api.nvim_create_buf(true, true)
+	vim.api.nvim_buf_set_name(log_buf, script_url .. '.' .. id .. '.log')
+	vim.api.nvim_exec_autocmds('BufReadPost', { buffer = log_buf })
+	local debug_buf = vim.api.nvim_create_buf(true, true)
+	vim.api.nvim_win_set_buf(log_win, log_buf)
 
+	-- Create Websocket --
 	local Websocket = require('websocket').Websocket
 	local base_address = vim.split(url_base, 'http://', {})[2]
 	base_address = vim.split(base_address, ':', {})[1]
@@ -124,12 +128,15 @@ function cosmos.log_stream(id, script_url)
 		auto_connect = false
 	})
 	cosmos.ws:add_on_connect(function()
+		local subscriber_str = '{"command":"subscribe","identifier":"{\\"channel\\":\\"RunningScriptChannel\\",\\"id\\":' ..
+			id .. '}"}'
 		cosmos.ws:send_text(subscriber_str)
 	end)
+	-- Handle Websocket Messages
 	cosmos.ws:add_on_message(
 		function(frame)
 			vim.schedule(function()
-				vim.api.nvim_buf_set_lines(buf_debug, -1, -1, false, { frame.payload })
+				vim.api.nvim_buf_set_lines(debug_buf, -1, -1, false, { frame.payload })
 				local msg = vim.json.decode(frame.payload).message
 				if msg then
 					if type(msg) ~= 'table' then -- this is a number for ping messages
@@ -137,7 +144,16 @@ function cosmos.log_stream(id, script_url)
 					end
 					if msg.type == 'output' then
 						local output_lines = cosmos.parse_output(msg)
-						vim.api.nvim_buf_set_lines(buf_log, -1, -1, false, output_lines)
+						local cursor_pos = vim.api.nvim_win_get_cursor(log_win)
+						local buflines = vim.api.nvim_buf_line_count(log_buf)
+						vim.api.nvim_buf_set_lines(log_buf, -1, -1, false, output_lines)
+						if cursor_pos[1] == buflines then
+							vim.api.nvim_win_set_cursor(log_win,
+								{ buflines + #output_lines, cursor_pos[2] })
+						end
+					elseif msg.type == 'file' then
+						local file_contents = vim.split(msg.text, '\n')
+						cosmos.create_script_buffer(script_url, file_contents, win_orig)
 					end
 				end
 			end)
@@ -161,7 +177,16 @@ function cosmos.setup()
 		{ nargs = 1 })
 	vim.api.nvim_create_user_command('CosmosRun',
 		function(args)
-			local script_url_arg = args.args or vim.api.nvim_get_current_buf()
+			local script_url_arg = args.args
+			if script_url_arg == '' then
+				local buf = vim.api.nvim_get_current_buf()
+				local buf_name = vim.api.nvim_buf_get_name(buf)
+				script_url_arg = vim.split(buf_name, 'cosmos://')[2]
+			end
+			if script_url_arg == nil then
+				print('Must give a script runner URL argument or first have :CosmosOpen')
+				return
+			end
 			cosmos.run_cosmos_script(script_url_arg)
 		end,
 		{ nargs = '?' })
