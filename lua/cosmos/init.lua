@@ -99,16 +99,8 @@ function cosmos.run_cosmos_script(script_url)
 	local url_base = vim.split(script_url, '/tools/scriptrunner')[1]
 end
 
-function cosmos.convert_base_url_to_ws_url(base_url, pass)
-	-- TODO: split on http[s]://
-	local ws_url = 'ws://' ..
-		vim.split(base_url, 'http://', {})[2] .. '/script-api/cable?scope=DEFAULT&authorization=' .. pass
-	return ws_url
-end
-
 -- api_url: http base address (ex. http://localhost:2900)
 function cosmos.log_stream(id, url_base)
-	local ws_url = cosmos.convert_base_url_to_ws_url(url_base, 'pass')
 	local subscriber_str = '{"command":"subscribe","identifier":"{\\"channel\\":\\"RunningScriptChannel\\",\\"id\\":' ..
 		id .. '}"}'
 
@@ -119,11 +111,12 @@ function cosmos.log_stream(id, url_base)
 	vim.api.nvim_win_set_buf(win, buf)
 
 	local Websocket = require('websocket').Websocket
+	local base_address = vim.split(url_base, 'http://', {})[2]
+	base_address = vim.split(base_address, ':', {})[1]
 	cosmos.ws = Websocket:new({
-		host = 'localhost',
+		host = base_address,
 		port = 2900,
 		path = '/script-api/cable?scope=DEFAULT&authorization=pass',
-		protocols = { "test" },
 		origin = "http://localhost",
 		auto_connect = false
 	})
@@ -136,7 +129,6 @@ function cosmos.log_stream(id, url_base)
 				vim.api.nvim_buf_set_lines(buf, -1, -1, false, { frame.payload })
 			end)
 		end)
-
 	cosmos.ws:connect()
 end
 

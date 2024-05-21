@@ -59,13 +59,6 @@ end)
 -- {"type":"ping","message":1716234836}
 describe("Websockets", function()
 
-	it("converts api base URL to websocket URL", function ()
-		local url = 'http://localhost:2900'
-		local script_api = cosmos.convert_base_url_to_ws_url(url, 'pass')
-		local expected_script_api = 'ws://localhost:2900/script-api/cable?scope=DEFAULT&authorization=pass'
-		assert.equals(expected_script_api, script_api)
-	end)
-
 	it("handles script message updates", function()
 		local json_msg = [[
 {
